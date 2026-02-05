@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 // 네임스페이스는 라이브러리가 아니라 코드를 논리적으로 묶는 이름 공간(저장소)이다.
 // 따라서 코드를 담고 있는 물리적 단위가 아니므로 중복되건 말건 신경쓸 필요가 없다.
@@ -69,13 +70,15 @@ public class MainForm : Form {
     public MainForm() {
         // Control Property
         this.Text = "Formodoro";
-        this.Width = 800;
-        this.Height = 650;
+        this.Width = 500;
+        this.Height = (int)(this.Width * 1.05f);
         this.FormBorderStyle = FormBorderStyle.None;
         this.MaximizeBox = this.MinimizeBox = this.ControlBox = false;
 
-        // Form Property;
+        // Common Control Property
         this.Font = new Font("궁서", 16);
+
+        // Form Property;
         this.ShowInTaskbar = false;
         this.StartPosition = FormStartPosition.WindowsDefaultLocation;
         this.TopLevel = true;
@@ -83,6 +86,13 @@ public class MainForm : Form {
         this.Opacity = 1.0;
         this.AllowTransparency = true;
         this.KeyPreview = false;
+
+        using(GraphicsPath path = new GraphicsPath()) {
+            int R = Math.Min(this.Width, this.Height);
+            Rectangle crt = new Rectangle(this.Location.X, this.Location.Y, R, R);
+            path.AddEllipse(crt);
+            this.Region = new Region(path);
+        }
 
         // Event Handler Subs
         this.Load += MainForm_Load;
@@ -132,7 +142,32 @@ public class MainForm : Form {
             G.Clear(SystemColors.Window);
 
             // Draw
-            G.DrawString("Hello World", this.Font, Brushes.Black, 100, 100);
+            using(GraphicsPath path = new GraphicsPath()) {
+                int R = Math.Min(this.Width, this.Height) / 2;
+                int r = R / 2;
+
+                Point Origin = new Point(R, R);
+                Rectangle Work, Break, Repeat;
+                int x, y;
+
+                x = Origin.X - R / 2 - r / 2;
+                y = Origin.Y;
+                Work = new Rectangle(x, y, r, r);
+                path.AddEllipse(Work);
+
+                x = Origin.X + R / 2 - r / 2;
+                y = Origin.Y;
+                Break = new Rectangle(x, y, r, r);
+                path.AddEllipse(Break);
+
+                x = Origin.X - r / 2;
+                y = Origin.Y - R / 2 - r / 2;
+                Repeat = new Rectangle(x, y, r, r);
+                path.AddEllipse(Repeat);
+
+                G.SmoothingMode = SmoothingMode.AntiAlias;
+                G.DrawPath(Pens.Black, path);
+            }
 
             // BitBlt
             e.Graphics.DrawImage(hBitmap, 0, 0);
