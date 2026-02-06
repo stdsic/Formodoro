@@ -54,11 +54,12 @@ public class MainForm : Form {
     private const int WM_NCHITTEST      = 0x0084;
 
     // Transparency
-    private const int GWL_EXSTYLE       = -20;
-    private const int WS_EX_TOOLWINDOW  = 0x0080;
-    private const int WS_EX_TRANSPARENT = 0x0020;
-    private const int WS_EX_NOACTIVATE  = 0x0800;
-    private const int WS_EX_TOPMOST     = 0x0008;
+    private const int GWL_EXSTYLE           = -20;
+    private const int WS_EX_TOOLWINDOW      = 0x0080;
+    private const int WS_EX_TRANSPARENT     = 0x0020;
+    private const int WS_EX_NOACTIVATE      = 0x0800;
+    private const int WS_EX_TOPMOST         = 0x0008;
+    private const int WM_NCLBUTTONDBLCLK    = 0x00A3;
 
     [DllImport("user32.dll")]
     public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -99,6 +100,7 @@ public class MainForm : Form {
         this.Paint += MainForm_Paint;
         this.KeyDown += MainForm_KeyDown;
         this.Resize += MainForm_Resize;
+        this.MouseClick += MainForm_MouseClick;
 
         // Field
         hWnd = 0;
@@ -143,34 +145,76 @@ public class MainForm : Form {
 
             // Draw
             using(GraphicsPath path = new GraphicsPath()) {
+                G.SmoothingMode = SmoothingMode.AntiAlias;
+
                 int R = Math.Min(this.Width, this.Height) / 2;
-                int r = R / 2;
+                int L = R / 2;
+                int r = L / 2;
+                int x,y;
 
                 Point Origin = new Point(R, R);
                 Rectangle Work, Break, Repeat;
-                int x, y;
 
-                x = Origin.X - R / 2 - r / 2;
+                x = Origin.X - R / 2 - L / 2;
                 y = Origin.Y;
-                Work = new Rectangle(x, y, r, r);
+                Work = new Rectangle(x, y, L, L);
                 path.AddEllipse(Work);
 
-                x = Origin.X + R / 2 - r / 2;
+                DrawLine(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 45.0);
+                DrawLine(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 225.0);
+
+                x = Origin.X + R / 2 - L / 2;
                 y = Origin.Y;
-                Break = new Rectangle(x, y, r, r);
+                Break = new Rectangle(x, y, L, L);
                 path.AddEllipse(Break);
 
-                x = Origin.X - r / 2;
-                y = Origin.Y - R / 2 - r / 2;
-                Repeat = new Rectangle(x, y, r, r);
+                DrawLine(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 45.0);
+                DrawLine(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 225.0);
+
+                x = Origin.X - L / 2;
+                y = Origin.Y - R / 2 - L / 2;
+                Repeat = new Rectangle(x, y, L, L);
                 path.AddEllipse(Repeat);
 
-                G.SmoothingMode = SmoothingMode.AntiAlias;
+                DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 45.0);
+                DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 225.0);
+
                 G.DrawPath(Pens.Black, path);
             }
 
             // BitBlt
             e.Graphics.DrawImage(hBitmap, 0, 0);
+        }
+    }
+
+    private void MainForm_MouseClick(object sender, MouseEventArgs e) {
+        int R = Math.Min(this.Width, this.Height) / 2;
+        int L = R / 2;
+        int r = L / 2;
+
+        double dRadian, cos, sin;
+        int x,y;
+
+        Point Origin = new Point(R, R);
+        Rectangle Work, Break, Repeat;
+
+        x = Origin.X - R / 2 - L / 2;
+        y = Origin.Y;
+        Work = new Rectangle(x, y, L, L);
+        Point bOrigin = new Point((int)((Work.Left + Work.Right) * 0.5) , (int)((Work.Top + Work.Bottom) * 0.5));
+
+        dRadian = (45.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        Point A = new Point((int)(bOrigin.X + r * cos), (int)(bOrigin.Y + r * sin));
+
+        dRadian = (135.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        Point B = new Point((int)(bOrigin.X + r * cos), (int)(bOrigin.Y + r * sin));
+
+        if(IsMouseOnChord(A, B, new Point(e.X, e.Y), bOrigin, r, L - r)){
+            MessageBox.Show("확인", "확인", MessageBoxButtons.OK);
         }
     }
 
@@ -198,13 +242,20 @@ public class MainForm : Form {
         Rectangle srt;
 
         switch(m.Msg){
+            case WM_NCLBUTTONDBLCLK:
+                // HTCAPTION을 반환하는 중이라 작업 영역을 더블클릭해도 NC 영역에 대한 더블클릭으로 처리된다.
+                // 최대화를 방지하기 위해 위 메세지에 대한 기본 처리를 막아야 한다.
+                return;
+
             case WM_NCHITTEST:
+                /*
                 base.WndProc(ref m);
                 nHit = m.Result.ToInt32();
                 if(nHit == HTCLIENT){
                     m.Result = (IntPtr)HTCAPTION;
                     return;
                 }
+                */
                 break;
 
             case WM_WINDOWPOSCHANGING:
@@ -219,7 +270,7 @@ public class MainForm : Form {
                 if(Math.Abs(srt.Right - (pos.x + pos.cx)) < (Snap + Margin)){ pos.x = srt.Right - (pos.cx + Margin); }
                 if(Math.Abs(srt.Bottom - (pos.y + pos.cy)) < (Snap + Margin)){ pos.y = srt.Bottom - (pos.cy + Margin); }
                 Marshal.StructureToPtr(pos, m.LParam, true);
-                break;
+                return;
 
             case WM_HOTKEY:
                 id = m.WParam.ToInt32();
@@ -246,5 +297,49 @@ public class MainForm : Form {
         }
 
         base.WndProc(ref m);
+    }
+
+
+    private void DrawLine(GraphicsPath path, int x, int y, int length, double ang) {
+        double dRadian, cos, sin;
+        int sx, sy, ex, ey;
+
+        dRadian = (ang % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        ex = (int)(x + length * cos);
+        ey = (int)(y + length * sin);
+
+        dRadian = ((ang + 90.0) % 360.0f) * Math.PI / 180.0f;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        sx = (int)(x + length * cos);
+        sy = (int)(y + length * sin);
+        path.AddLine(sx, sy, ex, ey);
+        path.StartFigure();
+    }
+
+    bool IsMouseOnChord(Point A, Point B, Point Mouse, Point Origin, double rad, double Threshold) {
+        Func<double, double, double> hypot = (x,y) => Math.Sqrt(x * x + y * y);
+        double dx = B.X - A.X;
+        double dy = B.Y - A.Y;
+
+        double k = ((Mouse.X - A.X) * dx + (Mouse.Y - A.Y) * dy) / (dx * dx + dy * dy);
+
+        if(k < 0.0){ k = 0.0; }
+        if(k > 1.0){ k = 1.0; }
+
+        // 가장 가까운 점
+        double qx = A.X + k * dx;
+        double qy = A.Y + k * dy;
+
+        double ToChord = hypot(Mouse.X - qx, Mouse.Y - qy);
+        double ToOrigin = hypot(Mouse.X - Origin.X, Mouse.Y - Origin.Y);
+
+        double SideMouse = dx * (Mouse.Y - A.Y) - dy * (Mouse.X - A.X);
+        double SideOrigin = dx * (Origin.Y - A.Y) - dy * (Origin.X - A.X);
+        bool OppositeSide = SideMouse * SideOrigin < 0.0;
+
+        return OppositeSide && (ToChord <= Threshold) && (ToOrigin <= rad);
     }
 }
