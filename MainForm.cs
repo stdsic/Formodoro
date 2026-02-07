@@ -350,6 +350,8 @@ public class MainForm : Form {
                         EndTime = DateTime.Now.AddMinutes(iBreak);
                     }
                 }
+
+                timer.Enabled = true;
             }
         }else {
             if(IsMouseOnCircle(WorkOrigin, r, Mouse)){
