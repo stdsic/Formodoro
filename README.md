@@ -27,6 +27,8 @@ Windows 10 이상<br>
 <br><br>
 ## 📚 Version History<br>
 - 1.0.0<br>
+  - 마우스 클릭 이벤트 로직 수정<br>
+- 1.0.0<br>
   - 최초 릴리스<br>
 <br><br>
 ## 🧾 License<br>
