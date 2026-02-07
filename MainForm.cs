@@ -1,9 +1,9 @@
 using System;
-using System.Windows.Forms;
+using System.Text;
 using System.Drawing;
+using System.Windows.Forms;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using System.Text;
 // 네임스페이스는 라이브러리가 아니라 코드를 논리적으로 묶는 이름 공간(저장소)이다.
 // 따라서 코드를 담고 있는 물리적 단위가 아니므로 중복되건 말건 신경쓸 필요가 없다.
 // 참고로 using 문으로 지정하는 네임스페이스는 "이 안에 있는 타입들을 사용하겠다."라는 선언과 같다.
@@ -12,14 +12,19 @@ using System.Text;
 public class MainForm : Form {
     private IntPtr hWnd;
     private Bitmap hBitmap;
-    private bool bTrans;
+    private System.Windows.Forms.Timer timer;
 
-    private int R, L, r, x,y, iWork, iBreak, iRepeat, iMode;
-    private float PixelFontSize;
-    private Point Origin, WorkOrigin, BreakOrigin, RepeatOrigin, Mouse, A, B, C, D, E, F, G, H, a, b, c, d;
-    private Rectangle Work, Break, Repeat;
-    private StringBuilder szWork, szBreak, szRepeat, szInput;
+    private bool bTrans, bStart, bBreak;
+    private int R, L, r, x,y, iWork, iBreak, iRepeat, iCount, iMode, iPadding;
+    private double dRadian, cos, sin;
+    private StringBuilder szWork, szBreak, szRepeat, szInput, szRemain, lpszWork, lpszBreak, lpszRepeat;
+    private DateTime EndTime;
+    private TimeSpan Remain;
+
     private Size TextSize;
+    private Font Font1, Font2;
+    private Rectangle Work, Break, Repeat, Start, Stop, Pause, Next, ltPause, rtPause, NextBar;
+    private Point Origin, WorkOrigin, BreakOrigin, RepeatOrigin, Mouse, A, B, C, D, E, F, G, H, a, b, c, d, p1,p2,p3;
 
     // Hotkey
     [DllImport("user32.dll")]
@@ -79,13 +84,18 @@ public class MainForm : Form {
     public MainForm() {
         // Control Property
         this.Text = "Formodoro";
-        this.Width = 500;
+        this.Width = Screen.PrimaryScreen.Bounds.Width / 5;
         this.Height = (int)(this.Width * 1.05f);
         this.FormBorderStyle = FormBorderStyle.None;
         this.MaximizeBox = this.MinimizeBox = this.ControlBox = false;
 
         // Common Control Property
-        this.Font = new Font("궁서", 16);
+        // this.Font = new Font("궁서", 16);
+        // WinForms는 DPI 변경시 컨트롤과 폰트 크기를 자동으로 조정한다.
+        // 직접 그리는 도형(path 등)에 대해서는 스케일링을 수행하지 않는데
+        // 컨트롤의 크기가 조정될 때 도형의 크기도 자연스럽게 따라 변하므로 따로 신경쓸 필요는 없다.
+        Font1 = new Font("궁서", 16);
+        Font2 = new Font("궁서", 24);
 
         // Form Property;
         this.ShowInTaskbar = false;
@@ -97,11 +107,13 @@ public class MainForm : Form {
         this.KeyPreview = false;
 
         using(GraphicsPath path = new GraphicsPath()) {
-            int R = Math.Min(this.Width, this.Height);
+            R = Math.Min(this.Width, this.Height);
             Rectangle crt = new Rectangle(this.Location.X, this.Location.Y, R, R);
             path.AddEllipse(crt);
             this.Region = new Region(path);
         }
+
+        Init();
 
         // Event Handler Subs
         this.Load += MainForm_Load;
@@ -110,22 +122,32 @@ public class MainForm : Form {
         this.Resize += MainForm_Resize;
         this.KeyPress += MainForm_KeyPress;
         this.MouseClick += MainForm_MouseClick;
+        timer = new System.Windows.Forms.Timer();
+        timer.Tick += MainForm_Tick;
 
         // Field
         hWnd = 0;
         iMode = 0;
         hBitmap = null;
         bTrans = false;
+        bStart = false;
+        bBreak = false;
         iWork = 25;
         iBreak = 5;
         iRepeat = 1;
+        iCount = 1;
+        iPadding = 5;
         szWork = new StringBuilder();
         szBreak = new StringBuilder();
         szRepeat = new StringBuilder();
         szInput = new StringBuilder();
+        szRemain = new StringBuilder();
+        lpszWork = new StringBuilder("작업");
+        lpszBreak = new StringBuilder("휴식");
+        lpszRepeat = new StringBuilder("반복");
     }
 
-    protected override void OnHandleCreated(EventArgs e) {
+   protected override void OnHandleCreated(EventArgs e) {
         // WM_CREATE와 대응되는 이벤트이며 핸들이 생성된 직후 호출된다.
         // 정확히는 WM_CREATE 직후에 발생하는 이벤트이다.
         base.OnHandleCreated(e);
@@ -159,150 +181,136 @@ public class MainForm : Form {
         if(hBitmap != null){
             Graphics G = Graphics.FromImage(hBitmap);
             G.Clear(SystemColors.Window);
+            G.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // Draw
             using(GraphicsPath path = new GraphicsPath()){
-                G.SmoothingMode = SmoothingMode.AntiAlias;
+                if(bStart) {
+                    TextSize = TextRenderer.MeasureText(lpszRepeat.ToString(), Font1);
+                    DrawPathString(G, path, new Point(RepeatOrigin.X, RepeatOrigin.Y - r - TextSize.Height / 2), lpszRepeat.ToString(), Font1); 
+                    path.AddEllipse(Repeat);
 
-                R = Math.Min(this.Width, this.Height) / 2;
-                L = R / 2;
-                r = L / 2;
+                    szRepeat.Clear();
+                    if(bBreak){
+                        szRepeat.Append(string.Format($"{iCount - 1}/{iRepeat}"));
+                    }else{
+                        szRepeat.Append(string.Format($"{iCount}/{iRepeat}"));
+                    }
+                    DrawPathString(G, path, RepeatOrigin, szRepeat.ToString(), Font1);
 
-                Origin = new Point(R, R);
+                    // this.Font = new Font("궁서", 24);
+                    // 그리는 중에 this.Font를 변경하게 되면 PerformLayout이 호출되면서 컨트롤 전체가 다시 레이아웃된다.
+                    // 즉, Invaldiate(true)가 발생하고 폼 전체가 무효화되며 OnPaint가 다시 호출되는데 이게 반복되면서 이전 프레임(시간 문자열)이 사라진다.
+                    // 이 문제를 해결하기 위해 this.Font에 폰트를 대입해서 사용하던 구조를 수정했다.
+                    // DrawPathString의 시그니처를 변경하여 폰트 객체를 전달받고 함수 내부에서 폰트 크기와 문자열 길이를 고려하여 화면에 출력한다.
+                    {   // 시간
+                        DrawPathString(G, path, Origin, szRemain.ToString(), Font2);
+                    }
 
-                x = Origin.X - R / 2 - L / 2;
-                y = Origin.Y;
-                Work = new Rectangle(x, y, L, L);
-                WorkOrigin = new Point((int)((Work.Left + Work.Right) * 0.5) , (int)((Work.Top + Work.Bottom) * 0.5));
-                path.AddEllipse(Work);
+                    {   // 중단 버튼
+                        path.AddRectangle(Stop);
+                    }
 
-                DrawLine(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 45.0);
-                DrawLine(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 225.0);
+                    {   // 일시정지 버튼
+                        if(timer.Enabled){
+                            ltPause = new Rectangle(Pause.Left, Pause.Top, (Pause.Right - Pause.Left) / 2 - iPadding, Pause.Bottom - Pause.Top);
+                            rtPause = new Rectangle((Pause.Left + Pause.Right) / 2 + iPadding, Pause.Top, (Pause.Right - Pause.Left) / 2 - iPadding, Pause.Bottom - Pause.Top);
 
-                x = Origin.X + R / 2 - L / 2;
-                y = Origin.Y;
-                Break = new Rectangle(x, y, L, L);
-                BreakOrigin = new Point((int)((Break.Left + Break.Right) * 0.5) , (int)((Break.Top + Break.Bottom) * 0.5));
-                path.AddEllipse(Break);
+                            path.AddRectangle(ltPause);
+                            path.AddRectangle(rtPause);
+                        }else{
+                            p1 = new Point(Pause.Left, Pause.Top);
+                            p2 = new Point(Pause.Left, Pause.Bottom);
+                            p3 = new Point(Pause.Right, (Pause.Top + Pause.Bottom) / 2);
 
-                DrawLine(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 45.0);
-                DrawLine(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 225.0);
+                            path.StartFigure();
+                            path.AddLine(p1, p2);
+                            path.AddLine(p2, p3);
+                            path.AddLine(p3, p1);
+                            path.CloseFigure();
+                        }
+                    }
 
-                x = Origin.X - L / 2;
-                y = Origin.Y - R / 2 - L / 2;
-                Repeat = new Rectangle(x, y, L, L);
-                RepeatOrigin = new Point((int)((Repeat.Left + Repeat.Right) * 0.5) , (int)((Repeat.Top + Repeat.Bottom) * 0.5));
-                path.AddEllipse(Repeat);
+                    {   // 다음 버튼
+                        p1 = new Point(Next.Left, Next.Top);
+                        p2 = new Point(Next.Left, Next.Bottom);
+                        p3 = new Point((int)(Next.Left + r * 0.7), (Next.Top + Next.Bottom) / 2);
 
-                DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 45.0);
-                DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 225.0);
+                        path.StartFigure();
+                        path.AddLine(p1, p2);
+                        path.AddLine(p2, p3);
+                        path.AddLine(p3, p1);
+                        path.CloseFigure();
 
-                // 폰트는 pt 단위, path.AddString은 픽셀 단위 
-                // pt -> px 변환식 : inch = pt / 72, px = inch * dpi
-                // 따라서, px = pt / 72 * dpi
-                PixelFontSize = G.DpiY * this.Font.Size / 72f;
+                        NextBar = new Rectangle((int)(Next.Left + r * 0.7 + r * 0.05), Next.Top, (int)(r * 0.1), Next.Height);
+                        path.AddRectangle(NextBar);
+                    }
 
-                switch(iMode){
-                    case 0:
-                        szWork.Clear();
-                        szWork.Append(iWork);
+                    {   // 상태
+                        if(bBreak){
+                            TextSize = TextRenderer.MeasureText("휴식중", Font1);
+                            DrawPathString(G, path, new Point((Pause.Left + Pause.Right) / 2, (Pause.Top + Pause.Bottom) / 2 + TextSize.Height * 2), "휴식중", Font1);
+                        }else{
+                            TextSize = TextRenderer.MeasureText("작업중", Font1);
+                            DrawPathString(G, path, new Point((Pause.Left + Pause.Right) / 2, (Pause.Top + Pause.Bottom) / 2 + TextSize.Height * 2), "작업중", Font1);
+                        }
+                    }
+                }else {
+                    TextSize = TextRenderer.MeasureText(lpszWork.ToString(), Font1);
+                    DrawPathString(G, path, new Point(WorkOrigin.X, WorkOrigin.Y - r - TextSize.Height / 2), lpszWork.ToString(), Font1); 
+                    TextSize = TextRenderer.MeasureText(lpszBreak.ToString(), Font1);
+                    DrawPathString(G, path, new Point(BreakOrigin.X, BreakOrigin.Y - r - TextSize.Height / 2), lpszBreak.ToString(), Font1); 
+                    TextSize = TextRenderer.MeasureText(lpszRepeat.ToString(), Font1);
+                    DrawPathString(G, path, new Point(RepeatOrigin.X, RepeatOrigin.Y - r - TextSize.Height / 2), lpszRepeat.ToString(), Font1); 
 
-                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
-                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
-                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                    path.AddEllipse(Work);
+                    DrawChord(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 45.0);
+                    DrawChord(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 225.0);
 
-                        szBreak.Clear();
-                        szBreak.Append(iBreak);
+                    path.AddEllipse(Break);
+                    DrawChord(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 45.0);
+                    DrawChord(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 225.0);
 
-                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
-                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
-                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                    path.AddEllipse(Repeat);
+                    DrawChord(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 45.0);
+                    DrawChord(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 225.0);
 
-                        szRepeat.Clear();
-                        szRepeat.Append(iRepeat);
+                    szWork.Clear();
+                    szBreak.Clear();
+                    szRepeat.Clear();
 
-                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
-                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
-                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-                        break;
+                    szWork.Append(iWork);
+                    szBreak.Append(iBreak);
+                    szRepeat.Append(iRepeat);
 
-                    case 1:
-                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
-                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
-                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
- 
-                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
-                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                    switch(iMode){
+                        case 0:
+                            DrawPathString(G, path, WorkOrigin, szWork.ToString(), Font1);
+                            DrawPathString(G, path, BreakOrigin, szBreak.ToString(), Font1);
+                            DrawPathString(G, path, RepeatOrigin, szRepeat.ToString(), Font1);
+                            break;
 
-                        szBreak.Clear();
-                        szBreak.Append(iBreak);
+                        case 1:
+                            DrawPathString(G, path, BreakOrigin, szBreak.ToString(), Font1);
+                            DrawPathString(G, path, RepeatOrigin, szRepeat.ToString(), Font1);
+                            DrawInputPathString(G, path, WorkOrigin, szInput, Font1);
+                            break;
 
-                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
-                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
-                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                        case 2:
+                            DrawPathString(G, path, WorkOrigin, szWork.ToString(), Font1);
+                            DrawPathString(G, path, RepeatOrigin, szRepeat.ToString(), Font1);
+                            DrawInputPathString(G, path, BreakOrigin, szInput, Font1);
+                            break;
 
-                        szRepeat.Clear();
-                        szRepeat.Append(iRepeat);
+                        case 3:
+                            DrawPathString(G, path, WorkOrigin, szWork.ToString(), Font1);
+                            DrawPathString(G, path, BreakOrigin, szBreak.ToString(), Font1);
+                            DrawInputPathString(G, path, RepeatOrigin, szInput, Font1);
+                            break;
+                    }
 
-                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
-                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
-                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-                        break;
-
-                    case 2:
-                        szWork.Clear();
-                        szWork.Append(iWork);
-
-                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
-                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
-                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-
-                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
-                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
-                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
- 
-                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
-                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-
-                        szRepeat.Clear();
-                        szRepeat.Append(iRepeat);
-
-                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
-                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
-                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-                        break;
-
-                    case 3:
-                        szWork.Clear();
-                        szWork.Append(iWork);
-
-                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
-                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
-                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-
-                        szBreak.Clear();
-                        szBreak.Append(iBreak);
-
-                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
-                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
-                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
-                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-
-                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
-                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
-                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
- 
-                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
-                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
-                        break;
+                    Start = new Rectangle(R - r, R + L , r * 2, r);
+                    path.AddRectangle(Start);
+                    DrawPathString(G, path, new Point((Start.Right + Start.Left) / 2, (Start.Top + Start.Bottom) / 2), "시작", Font1);
                 }
 
                 G.DrawPath(Pens.Black, path);
@@ -314,75 +322,107 @@ public class MainForm : Form {
     }
 
     private void MainForm_MouseClick(object sender, MouseEventArgs e) {
-        double dRadian, cos, sin;
         Mouse = new Point(e.X, e.Y);
 
-        dRadian = (45.0 % 360.0) * Math.PI / 180.0;
-        cos = Math.Cos(dRadian);
-        sin = Math.Sin(dRadian);
-        A = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
-        E = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
-        a = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+        if(bStart){
+            if(IsMouseOnRect(Stop, Mouse)){
+                Finish();
+            }
 
-        dRadian = (135.0 % 360.0) * Math.PI / 180.0;
-        cos = Math.Cos(dRadian);
-        sin = Math.Sin(dRadian);
-        B = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
-        F = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
-        b = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
-
-
-        dRadian = (225.0 % 360.0) * Math.PI / 180.0;
-        cos = Math.Cos(dRadian);
-        sin = Math.Sin(dRadian);
-        C = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
-        G = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
-        c = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
-
-
-        dRadian = (315.0 % 360.0) * Math.PI / 180.0;
-        cos = Math.Cos(dRadian);
-        sin = Math.Sin(dRadian);
-        D = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
-        H = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
-        d = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
-
-        if(IsMouseOnCircle(WorkOrigin, r, Mouse)){
-            if(iMode != 1) {
-                if(IsMouseOnArc(A, B, Mouse, WorkOrigin, r, L - r)) {
-                    iWork = Math.Clamp(iWork - 1, 1, 999);
-                }else if(IsMouseOnArc(C, D, Mouse, WorkOrigin, r, L - r)) {
-                    iWork = Math.Clamp(iWork + 1, 1, 999);
-                }else{
-                    szInput.Clear();
-                    iMode = 1;
+            if(IsMouseOnRect(Pause, Mouse)){
+                if(!timer.Enabled){
+                    EndTime = DateTime.Now.Add(Remain);
                 }
+                timer.Enabled = !timer.Enabled;
+            }
+
+            if(IsMouseOnRect(Next, Mouse)){
+                if(bBreak){
+                    bBreak = false;
+                    EndTime = DateTime.Now.AddMinutes(iWork);
+                }else{
+                    iCount++;
+
+                    if(iCount > iRepeat){
+                        Finish();
+                    }else{
+                        bBreak = true;
+                        EndTime = DateTime.Now.AddMinutes(iBreak);
+                    }
+                }
+            }
+        }else {
+            if(IsMouseOnCircle(WorkOrigin, r, Mouse)){
+                if(iMode != 1) {
+                    if(IsMouseOnArc(A, B, Mouse, WorkOrigin, r, L - r)) {
+                        iWork = Math.Clamp(iWork - 1, 1, 999);
+                    }else if(IsMouseOnArc(C, D, Mouse, WorkOrigin, r, L - r)) {
+                        iWork = Math.Clamp(iWork + 1, 1, 999);
+                    }else{
+                        szInput.Clear();
+                        iMode = 1;
+                    }
+                }
+            }
+
+            if(IsMouseOnCircle(BreakOrigin, r, Mouse)){
+                if(iMode != 2){
+                    if(IsMouseOnArc(E, F, Mouse, BreakOrigin, r, L - r)) {
+                        iBreak = Math.Clamp(iBreak - 1, 1, 999);
+                    }else if(IsMouseOnArc(G, H, Mouse, BreakOrigin, r, L - r)) {
+                        iBreak = Math.Clamp(iBreak + 1, 1, 999);
+                    }else{
+                        szInput.Clear();
+                        iMode = 2;
+                    }
+                }
+            }
+
+            if(IsMouseOnCircle(RepeatOrigin, r, Mouse)){
+                if(iMode != 3){
+                    if(IsMouseOnArc(a, b, Mouse, RepeatOrigin, r, L - r)) {
+                        iRepeat = Math.Clamp(iRepeat - 1, 1, 999);
+                    }else if(IsMouseOnArc(c, d, Mouse, RepeatOrigin, r, L - r)) {
+                        iRepeat = Math.Clamp(iRepeat + 1, 1, 999);
+                    }else {
+                        szInput.Clear();
+                        iMode = 3;
+                    }
+                }
+            }
+
+            if(IsMouseOnRect(Start, Mouse)){
+                // 타이머 설정 및 화면 그리기 모드 변경
+                bStart = true;
+                EndTime = DateTime.Now.AddMinutes(iWork);
+                timer.Interval = 200;
+                timer.Start();
             }
         }
 
-        if(IsMouseOnCircle(BreakOrigin, r, Mouse)){
-            if(iMode != 2){
-                if(IsMouseOnArc(E, F, Mouse, BreakOrigin, r, L - r)) {
-                    iBreak = Math.Clamp(iBreak - 1, 1, 999);
-                }else if(IsMouseOnArc(G, H, Mouse, BreakOrigin, r, L - r)) {
-                    iBreak = Math.Clamp(iBreak + 1, 1, 999);
-                }else{
-                    szInput.Clear();
-                    iMode = 2;
-                }
-            }
-        }
+        this.Invalidate();
+    }
 
-        if(IsMouseOnCircle(RepeatOrigin, r, Mouse)){
-            if(iMode != 3){
-                if(IsMouseOnArc(a, b, Mouse, RepeatOrigin, r, L - r)) {
-                    iRepeat = Math.Clamp(iRepeat - 1, 1, 999);
-                }else if(IsMouseOnArc(c, d, Mouse, RepeatOrigin, r, L - r)) {
-                    iRepeat = Math.Clamp(iRepeat + 1, 1, 999);
-                }else {
-                    szInput.Clear();
-                    iMode = 3;
+    private void MainForm_Tick(object sender, EventArgs e) {
+        if(bStart){
+            Remain = EndTime - DateTime.Now;
+
+            if(Remain <= TimeSpan.Zero){
+                if(bBreak){
+                    bBreak = false;
+                    EndTime = DateTime.Now.AddMinutes(iWork);
+                }else{
+                    iCount++;
+                    if(iCount > iRepeat){
+                        Finish();
+                    }else{
+                        bBreak = true;
+                        EndTime = DateTime.Now.AddMinutes(iBreak);
+                    }
                 }
+            }else{
+                szRemain.Clear();
+                szRemain.Append(Remain.ToString(@"hh\:mm\:ss"));
             }
         }
 
@@ -392,8 +432,13 @@ public class MainForm : Form {
     private void MainForm_KeyDown(object sender, KeyEventArgs e) {
         switch(e.KeyCode) {
             case Keys.Escape:
-                if(DialogResult.Yes == MessageBox.Show("프로그램을 종료하시겠습니까?", "Formodoro", MessageBoxButtons.YesNo, MessageBoxIcon.Question)){
-                    this.Close();
+                if(iMode == 0){
+                    if(DialogResult.Yes == MessageBox.Show("프로그램을 종료하시겠습니까?", "Formodoro", MessageBoxButtons.YesNo, MessageBoxIcon.Question)){
+                        this.Close();
+                    }
+                }else{
+                    iMode = 0;
+                    this.Invalidate();
                 }
                 break;
         }
@@ -426,14 +471,14 @@ public class MainForm : Form {
                         }
                     }
                     iMode = 0;
-                    Invalidate();
+                    this.Invalidate();
                     return true;
 
                 case Keys.Back:
                     if(szInput.Length > 0) {
                        szInput.Remove(szInput.Length - 1, 1);
                     }
-                    Invalidate();
+                    this.Invalidate();
                     return true;
             }
         }
@@ -446,7 +491,7 @@ public class MainForm : Form {
             if(char.IsDigit(e.KeyChar)) {
                 if(szInput.Length < 3) {
                     szInput.Append(e.KeyChar);
-                    Invalidate();
+                    this.Invalidate();
                 }
             }
         }
@@ -469,11 +514,21 @@ public class MainForm : Form {
                 Mouse = new Point((int)m.LParam);
                 Mouse = this.PointToClient(Mouse);
 
-                if(!Work.Contains(Mouse) && !Break.Contains(Mouse) && !Repeat.Contains(Mouse)) {
-                    nHit = m.Result.ToInt32();
-                    if(nHit == HTCLIENT){
-                        m.Result = (IntPtr)HTCAPTION;
-                        return;
+                if(bStart){
+                    if(!Stop.Contains(Mouse) && !Pause.Contains(Mouse) && !Next.Contains(Mouse)) {
+                        nHit = m.Result.ToInt32();
+                        if(nHit == HTCLIENT){
+                            m.Result = (IntPtr)HTCAPTION;
+                            return;
+                        }
+                    }
+                }else {
+                    if(!Work.Contains(Mouse) && !Break.Contains(Mouse) && !Repeat.Contains(Mouse) && !Start.Contains(Mouse)) {
+                        nHit = m.Result.ToInt32();
+                        if(nHit == HTCLIENT){
+                            m.Result = (IntPtr)HTCAPTION;
+                            return;
+                        }
                     }
                 }
                 break;
@@ -520,7 +575,7 @@ public class MainForm : Form {
     }
 
 
-    private void DrawLine(GraphicsPath path, int x, int y, int length, double ang) {
+    private void DrawChord(GraphicsPath path, int x, int y, int length, double ang) {
         double dRadian, cos, sin;
         int sx, sy, ex, ey;
 
@@ -537,6 +592,29 @@ public class MainForm : Form {
         sy = (int)(y + length * sin);
         path.AddLine(sx, sy, ex, ey);
         path.StartFigure();
+    }
+
+    private void DrawPathString(Graphics G, GraphicsPath path, Point Origin, String szText, Font cFont){
+        // 폰트는 pt 단위, path.AddString은 픽셀 단위 
+        // pt -> px 변환식 : inch = pt / 72, px = inch * dpi
+        // 따라서, px = pt / 72 * dpi
+        float pxFontSize = G.DpiY * cFont.Size / 72f;
+        TextSize = TextRenderer.MeasureText(szText, cFont);
+
+        x = (int)(Origin.X - TextSize.Width / 2f);
+        y = (int)(Origin.Y - TextSize.Height / 2f);
+        path.AddString(szText, cFont.FontFamily, (int)cFont.Style, pxFontSize, new Point(x,y), StringFormat.GenericDefault);
+    }
+
+    private void DrawInputPathString(Graphics G, GraphicsPath path, Point Origin, StringBuilder szText, Font cFont){
+        bool bNone = (szText.Length == 0);
+        float pxFontSize = G.DpiY * cFont.Size / 72f;
+        TextSize = TextRenderer.MeasureText(bNone ? "8" : szText.ToString(), cFont);
+
+        x = (int)(Origin.X - TextSize.Width / 2f);
+        y = (int)(Origin.Y - TextSize.Height / 2f);
+        path.AddLine(bNone ? x : x + TextSize.Width, y, bNone ? x + 1 : x + TextSize.Width + 1, y + TextSize.Height);
+        path.AddString(szText.ToString(), cFont.FontFamily, (int)cFont.Style, pxFontSize, new Point(x,y), StringFormat.GenericDefault);
     }
 
     private bool IsMouseOnArc(Point A, Point B, Point Mouse, Point Origin, double radius, double Threshold) {
@@ -568,5 +646,74 @@ public class MainForm : Form {
         double dy = Mouse.Y - Origin.Y;
 
         return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private bool IsMouseOnRect(Rectangle rect, Point Mouse) {
+        if(rect.Contains(Mouse)){ return true; }
+        return false;
+    }
+
+    private void Finish(){
+        timer.Stop();
+        bStart = false;
+        iMode = 0;
+        iCount = 1;
+    }
+
+    private void Init() {
+        R = Math.Min(this.Width, this.Height) / 2;
+        L = R / 2;
+        r = L / 2;
+
+        Origin = new Point(R, R);
+
+        x = Origin.X - R / 2 - L / 2;
+        y = Origin.Y;
+        Work = new Rectangle(x, y, L, L);
+        WorkOrigin = new Point((int)((Work.Left + Work.Right) * 0.5) , (int)((Work.Top + Work.Bottom) * 0.5));
+
+        x = Origin.X + R / 2 - L / 2;
+        y = Origin.Y;
+        Break = new Rectangle(x, y, L, L);
+        BreakOrigin = new Point((int)((Break.Left + Break.Right) * 0.5) , (int)((Break.Top + Break.Bottom) * 0.5));
+
+        x = Origin.X - L / 2;
+        y = Origin.Y - R / 2 - L / 2;
+        Repeat = new Rectangle(x, y, L, L);
+        RepeatOrigin = new Point((int)((Repeat.Left + Repeat.Right) * 0.5) , (int)((Repeat.Top + Repeat.Bottom) * 0.5));
+
+        dRadian = (45.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        A = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        E = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        a = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+        dRadian = (135.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        B = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        F = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        b = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+
+        dRadian = (225.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        C = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        G = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        c = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+
+        dRadian = (315.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        D = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        H = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        d = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+        Stop = new Rectangle(R - r * 2 - r/2, R + r, r, r);
+        Pause = new Rectangle(R - r/2, R + r, r, r);
+        Next = new Rectangle(R + r * 2 - r/2, R + r, r, r);
     }
 }
