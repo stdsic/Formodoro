@@ -40,3 +40,4 @@ TestResult*/
 *.coveragexml
 
 *.dll
+*.bat
