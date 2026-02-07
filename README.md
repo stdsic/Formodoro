@@ -7,7 +7,8 @@ C# WinForms로 제작된 뽀모도로 타이머입니다.<br>
 ## 📝 Description<br>
 작업 시간과 휴식 시간, 반복 횟수를 설정할 수 있으며 아래의 단축키를 이용할 수 있습니다.<br>
 - Alt + Shift + E : 비인터랙티브 오버레이 전용 투명 창으로 전환(입력 통과, 작업 전환 목록에서 제외, 반투명 적용)
-- Esc : 프로그램 종료 또는 입력 종료
+- Enter : 입력 완료 처리
+- Esc : 프로그램 종료 또는 입력 취소/종료
 <br><br>
 ## 🚀 Getting Started<br>
 ### 🔧 Dependencies<br>
