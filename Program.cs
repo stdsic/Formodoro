@@ -9,7 +9,7 @@ internal static class Program {
     //
 
         // DPI 인식 모드 설정: PerMonitorV2(최신 Windows DPI 처리 방식)
-        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        // Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 
         // xp 이후 최신 테마(비주얼 스타일) 사용하도록 설정
         Application.EnableVisualStyles();
