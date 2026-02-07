@@ -3,6 +3,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using System.Text;
 // 네임스페이스는 라이브러리가 아니라 코드를 논리적으로 묶는 이름 공간(저장소)이다.
 // 따라서 코드를 담고 있는 물리적 단위가 아니므로 중복되건 말건 신경쓸 필요가 없다.
 // 참고로 using 문으로 지정하는 네임스페이스는 "이 안에 있는 타입들을 사용하겠다."라는 선언과 같다.
@@ -12,6 +13,13 @@ public class MainForm : Form {
     private IntPtr hWnd;
     private Bitmap hBitmap;
     private bool bTrans;
+
+    private int R, L, r, x,y, iWork, iBreak, iRepeat, iMode;
+    private float PixelFontSize;
+    private Point Origin, WorkOrigin, BreakOrigin, RepeatOrigin, Mouse, A, B, C, D, E, F, G, H, a, b, c, d;
+    private Rectangle Work, Break, Repeat;
+    private StringBuilder szWork, szBreak, szRepeat, szInput;
+    private Size TextSize;
 
     // Hotkey
     [DllImport("user32.dll")]
@@ -100,12 +108,21 @@ public class MainForm : Form {
         this.Paint += MainForm_Paint;
         this.KeyDown += MainForm_KeyDown;
         this.Resize += MainForm_Resize;
+        this.KeyPress += MainForm_KeyPress;
         this.MouseClick += MainForm_MouseClick;
 
         // Field
         hWnd = 0;
+        iMode = 0;
         hBitmap = null;
         bTrans = false;
+        iWork = 25;
+        iBreak = 5;
+        iRepeat = 1;
+        szWork = new StringBuilder();
+        szBreak = new StringBuilder();
+        szRepeat = new StringBuilder();
+        szInput = new StringBuilder();
     }
 
     protected override void OnHandleCreated(EventArgs e) {
@@ -144,20 +161,19 @@ public class MainForm : Form {
             G.Clear(SystemColors.Window);
 
             // Draw
-            using(GraphicsPath path = new GraphicsPath()) {
+            using(GraphicsPath path = new GraphicsPath()){
                 G.SmoothingMode = SmoothingMode.AntiAlias;
 
-                int R = Math.Min(this.Width, this.Height) / 2;
-                int L = R / 2;
-                int r = L / 2;
-                int x,y;
+                R = Math.Min(this.Width, this.Height) / 2;
+                L = R / 2;
+                r = L / 2;
 
-                Point Origin = new Point(R, R);
-                Rectangle Work, Break, Repeat;
+                Origin = new Point(R, R);
 
                 x = Origin.X - R / 2 - L / 2;
                 y = Origin.Y;
                 Work = new Rectangle(x, y, L, L);
+                WorkOrigin = new Point((int)((Work.Left + Work.Right) * 0.5) , (int)((Work.Top + Work.Bottom) * 0.5));
                 path.AddEllipse(Work);
 
                 DrawLine(path, (int)((Work.Left + Work.Right) * 0.5), (int)((Work.Top + Work.Bottom) * 0.5), r, 45.0);
@@ -166,6 +182,7 @@ public class MainForm : Form {
                 x = Origin.X + R / 2 - L / 2;
                 y = Origin.Y;
                 Break = new Rectangle(x, y, L, L);
+                BreakOrigin = new Point((int)((Break.Left + Break.Right) * 0.5) , (int)((Break.Top + Break.Bottom) * 0.5));
                 path.AddEllipse(Break);
 
                 DrawLine(path, (int)((Break.Left + Break.Right) * 0.5), (int)((Break.Top + Break.Bottom) * 0.5), r, 45.0);
@@ -174,10 +191,119 @@ public class MainForm : Form {
                 x = Origin.X - L / 2;
                 y = Origin.Y - R / 2 - L / 2;
                 Repeat = new Rectangle(x, y, L, L);
+                RepeatOrigin = new Point((int)((Repeat.Left + Repeat.Right) * 0.5) , (int)((Repeat.Top + Repeat.Bottom) * 0.5));
                 path.AddEllipse(Repeat);
 
                 DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 45.0);
                 DrawLine(path, (int)((Repeat.Left + Repeat.Right) * 0.5), (int)((Repeat.Top + Repeat.Bottom) * 0.5), r, 225.0);
+
+                // 폰트는 pt 단위, path.AddString은 픽셀 단위 
+                // pt -> px 변환식 : inch = pt / 72, px = inch * dpi
+                // 따라서, px = pt / 72 * dpi
+                PixelFontSize = G.DpiY * this.Font.Size / 72f;
+
+                switch(iMode){
+                    case 0:
+                        szWork.Clear();
+                        szWork.Append(iWork);
+
+                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
+                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
+                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szBreak.Clear();
+                        szBreak.Append(iBreak);
+
+                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
+                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
+                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szRepeat.Clear();
+                        szRepeat.Append(iRepeat);
+
+                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
+                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
+                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                        break;
+
+                    case 1:
+                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
+                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
+                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
+ 
+                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
+                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szBreak.Clear();
+                        szBreak.Append(iBreak);
+
+                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
+                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
+                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szRepeat.Clear();
+                        szRepeat.Append(iRepeat);
+
+                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
+                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
+                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                        break;
+
+                    case 2:
+                        szWork.Clear();
+                        szWork.Append(iWork);
+
+                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
+                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
+                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
+                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
+                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
+ 
+                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
+                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szRepeat.Clear();
+                        szRepeat.Append(iRepeat);
+
+                        TextSize = TextRenderer.MeasureText(szRepeat.ToString(), this.Font);
+                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
+                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szRepeat.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                        break;
+
+                    case 3:
+                        szWork.Clear();
+                        szWork.Append(iWork);
+
+                        TextSize = TextRenderer.MeasureText(szWork.ToString(), this.Font);
+                        x = (int)(WorkOrigin.X - TextSize.Width / 2f);
+                        y = (int)(WorkOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szWork.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        szBreak.Clear();
+                        szBreak.Append(iBreak);
+
+                        TextSize = TextRenderer.MeasureText(szBreak.ToString(), this.Font);
+                        x = (int)(BreakOrigin.X - TextSize.Width / 2f);
+                        y = (int)(BreakOrigin.Y - TextSize.Height / 2f);
+                        path.AddString(szBreak.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+
+                        TextSize = TextRenderer.MeasureText(szInput.ToString(), this.Font);
+                        x = (int)(RepeatOrigin.X - TextSize.Width / 2f);
+                        y = (int)(RepeatOrigin.Y - TextSize.Height / 2f);
+ 
+                        path.AddLine(x + TextSize.Width, y, x + TextSize.Width + 1, y + TextSize.Height);
+                        path.AddString(szInput.ToString(), this.Font.FontFamily, (int)this.Font.Style, PixelFontSize, new Point(x,y), StringFormat.GenericDefault);
+                        break;
+                }
 
                 G.DrawPath(Pens.Black, path);
             }
@@ -188,34 +314,79 @@ public class MainForm : Form {
     }
 
     private void MainForm_MouseClick(object sender, MouseEventArgs e) {
-        int R = Math.Min(this.Width, this.Height) / 2;
-        int L = R / 2;
-        int r = L / 2;
-
         double dRadian, cos, sin;
-        int x,y;
-
-        Point Origin = new Point(R, R);
-        Rectangle Work, Break, Repeat;
-
-        x = Origin.X - R / 2 - L / 2;
-        y = Origin.Y;
-        Work = new Rectangle(x, y, L, L);
-        Point bOrigin = new Point((int)((Work.Left + Work.Right) * 0.5) , (int)((Work.Top + Work.Bottom) * 0.5));
+        Mouse = new Point(e.X, e.Y);
 
         dRadian = (45.0 % 360.0) * Math.PI / 180.0;
         cos = Math.Cos(dRadian);
         sin = Math.Sin(dRadian);
-        Point A = new Point((int)(bOrigin.X + r * cos), (int)(bOrigin.Y + r * sin));
+        A = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        E = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        a = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
 
         dRadian = (135.0 % 360.0) * Math.PI / 180.0;
         cos = Math.Cos(dRadian);
         sin = Math.Sin(dRadian);
-        Point B = new Point((int)(bOrigin.X + r * cos), (int)(bOrigin.Y + r * sin));
+        B = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        F = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        b = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
 
-        if(IsMouseOnChord(A, B, new Point(e.X, e.Y), bOrigin, r, L - r)){
-            MessageBox.Show("확인", "확인", MessageBoxButtons.OK);
+
+        dRadian = (225.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        C = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        G = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        c = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+
+        dRadian = (315.0 % 360.0) * Math.PI / 180.0;
+        cos = Math.Cos(dRadian);
+        sin = Math.Sin(dRadian);
+        D = new Point((int)(WorkOrigin.X + r * cos), (int)(WorkOrigin.Y + r * sin));
+        H = new Point((int)(BreakOrigin.X + r * cos), (int)(BreakOrigin.Y + r * sin));
+        d = new Point((int)(RepeatOrigin.X + r * cos), (int)(RepeatOrigin.Y + r * sin));
+
+        if(IsMouseOnCircle(WorkOrigin, r, Mouse)){
+            if(iMode != 1) {
+                if(IsMouseOnArc(A, B, Mouse, WorkOrigin, r, L - r)) {
+                    iWork = Math.Clamp(iWork - 1, 1, 999);
+                }else if(IsMouseOnArc(C, D, Mouse, WorkOrigin, r, L - r)) {
+                    iWork = Math.Clamp(iWork + 1, 1, 999);
+                }else{
+                    szInput.Clear();
+                    iMode = 1;
+                }
+            }
         }
+
+        if(IsMouseOnCircle(BreakOrigin, r, Mouse)){
+            if(iMode != 2){
+                if(IsMouseOnArc(E, F, Mouse, BreakOrigin, r, L - r)) {
+                    iBreak = Math.Clamp(iBreak - 1, 1, 999);
+                }else if(IsMouseOnArc(G, H, Mouse, BreakOrigin, r, L - r)) {
+                    iBreak = Math.Clamp(iBreak + 1, 1, 999);
+                }else{
+                    szInput.Clear();
+                    iMode = 2;
+                }
+            }
+        }
+
+        if(IsMouseOnCircle(RepeatOrigin, r, Mouse)){
+            if(iMode != 3){
+                if(IsMouseOnArc(a, b, Mouse, RepeatOrigin, r, L - r)) {
+                    iRepeat = Math.Clamp(iRepeat - 1, 1, 999);
+                }else if(IsMouseOnArc(c, d, Mouse, RepeatOrigin, r, L - r)) {
+                    iRepeat = Math.Clamp(iRepeat + 1, 1, 999);
+                }else {
+                    szInput.Clear();
+                    iMode = 3;
+                }
+            }
+        }
+
+        this.Invalidate();
     }
 
     private void MainForm_KeyDown(object sender, KeyEventArgs e) {
@@ -235,6 +406,52 @@ public class MainForm : Form {
         base.OnFormClosed(e);
     }
 
+    protected override bool ProcessCmdKey(ref Message msg, Keys KeyData) {
+        if(iMode != 0) {
+            switch(KeyData) {
+                case Keys.Enter:
+                    if(int.TryParse(szInput.ToString(), out int Value)){
+                        switch(iMode) {
+                            case 1:
+                                iWork = Math.Clamp(Value, 1, 999);
+                                break;
+
+                            case 2:
+                                iBreak = Math.Clamp(Value, 1, 999);
+                                break;
+
+                            case 3:
+                                iRepeat = Math.Clamp(Value, 1, 999);
+                                break;
+                        }
+                    }
+                    iMode = 0;
+                    Invalidate();
+                    return true;
+
+                case Keys.Back:
+                    if(szInput.Length > 0) {
+                       szInput.Remove(szInput.Length - 1, 1);
+                    }
+                    Invalidate();
+                    return true;
+            }
+        }
+
+        return base.ProcessCmdKey(ref msg, KeyData);
+    }
+
+    private void MainForm_KeyPress(object sender, KeyPressEventArgs e) {
+        if(iMode != 0) {
+            if(char.IsDigit(e.KeyChar)) {
+                if(szInput.Length < 3) {
+                    szInput.Append(e.KeyChar);
+                    Invalidate();
+                }
+            }
+        }
+    }
+
     protected override void WndProc(ref Message m) {
         int id, Snap, Margin, nHit, ExStyle;
         WINDOWPOS pos;
@@ -248,14 +465,17 @@ public class MainForm : Form {
                 return;
 
             case WM_NCHITTEST:
-                /*
                 base.WndProc(ref m);
-                nHit = m.Result.ToInt32();
-                if(nHit == HTCLIENT){
-                    m.Result = (IntPtr)HTCAPTION;
-                    return;
+                Mouse = new Point((int)m.LParam);
+                Mouse = this.PointToClient(Mouse);
+
+                if(!Work.Contains(Mouse) && !Break.Contains(Mouse) && !Repeat.Contains(Mouse)) {
+                    nHit = m.Result.ToInt32();
+                    if(nHit == HTCLIENT){
+                        m.Result = (IntPtr)HTCAPTION;
+                        return;
+                    }
                 }
-                */
                 break;
 
             case WM_WINDOWPOSCHANGING:
@@ -319,7 +539,7 @@ public class MainForm : Form {
         path.StartFigure();
     }
 
-    bool IsMouseOnChord(Point A, Point B, Point Mouse, Point Origin, double rad, double Threshold) {
+    private bool IsMouseOnArc(Point A, Point B, Point Mouse, Point Origin, double radius, double Threshold) {
         Func<double, double, double> hypot = (x,y) => Math.Sqrt(x * x + y * y);
         double dx = B.X - A.X;
         double dy = B.Y - A.Y;
@@ -340,6 +560,13 @@ public class MainForm : Form {
         double SideOrigin = dx * (Origin.Y - A.Y) - dy * (Origin.X - A.X);
         bool OppositeSide = SideMouse * SideOrigin < 0.0;
 
-        return OppositeSide && (ToChord <= Threshold) && (ToOrigin <= rad);
+        return OppositeSide && (ToChord <= Threshold) && (ToOrigin <= radius);
+    }
+
+    private bool IsMouseOnCircle(Point Origin, double radius, Point Mouse) {
+        double dx = Mouse.X - Origin.X;
+        double dy = Mouse.Y - Origin.Y;
+
+        return dx * dx + dy * dy <= radius * radius;
     }
 }
