@@ -5,9 +5,9 @@
     <Description>Pomodoro Timer - C# WinForms Application</Description>
     <Company>stdsic</Company>
     <Product>Formodoro.exe</Product>
-    <AssemblyVersion>1.0.1.1</AssemblyVersion>
-    <FileVersion>1.0.1.1</FileVersion>
-    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.2.2</AssemblyVersion>
+    <FileVersion>1.0.2.2</FileVersion>
+    <Version>1.0.2</Version>
     <Copyright>Copyright © 2025 stdsic. Licensed under the MIT License</Copyright>
     <NeutralLanguage>ko-KR</NeutralLanguage>
     <ContinuousIntegrationBuild>false</ContinuousIntegrationBuild>
