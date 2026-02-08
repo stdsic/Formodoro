@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Media;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Drawing.Drawing2D;
@@ -326,6 +327,7 @@ public class MainForm : Form {
 
         if(bStart){
             if(IsMouseOnRect(Stop, Mouse)){
+                SystemSounds.Asterisk.Play();
                 Finish();
             }
 
@@ -339,13 +341,16 @@ public class MainForm : Form {
             if(IsMouseOnRect(Next, Mouse)){
                 if(bBreak){
                     bBreak = false;
+                    SystemSounds.Asterisk.Play();
                     EndTime = DateTime.Now.AddMinutes(iWork);
                 }else{
                     iCount++;
 
                     if(iCount > iRepeat){
+                        SystemSounds.Asterisk.Play();
                         Finish();
                     }else{
+                        SystemSounds.Asterisk.Play();
                         bBreak = true;
                         EndTime = DateTime.Now.AddMinutes(iBreak);
                     }
@@ -411,13 +416,16 @@ public class MainForm : Form {
 
             if(Remain <= TimeSpan.Zero){
                 if(bBreak){
+                    SystemSounds.Asterisk.Play();
                     bBreak = false;
                     EndTime = DateTime.Now.AddMinutes(iWork);
                 }else{
                     iCount++;
                     if(iCount > iRepeat){
+                        SystemSounds.Asterisk.Play();
                         Finish();
                     }else{
+                        SystemSounds.Asterisk.Play();
                         bBreak = true;
                         EndTime = DateTime.Now.AddMinutes(iBreak);
                     }
